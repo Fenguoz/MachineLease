@@ -1,0 +1,22 @@
+{
+    "name": "fenguoz/machinelease",
+    "license": "MIT",
+    "require": {},
+    "autoload": {
+        "psr-4":{
+            "Fenguoz\\MachineLease\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Fenguoz\\MachineLease\\Tests\\":"tests/"
+        }
+    },
+    "extra": {
+        "laravel":{
+            "providers": [
+                "Fenguoz\\MachineLease\\ServiceProvider"
+            ]
+        }
+    }
+}

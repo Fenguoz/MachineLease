@@ -12,7 +12,7 @@ class MachineQuotesModel extends Model
 	 * @var string
 	 */
 	protected $table = 'plugin_machine_quotes';
-	
+
 	/**
 	 * 时间戳
 	 *

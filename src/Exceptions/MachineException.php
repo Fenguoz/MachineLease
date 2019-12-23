@@ -4,10 +4,10 @@ namespace Fenguoz\MachineLease\Exceptions;
 
 class MachineException extends \Exception
 {
-    const UNKONW = 72000;
+    const MACHINE_ID_ERROR = 72200;
 
     static public $__names = array(
-        self::UNKONW => 'UNKNOWN',
+        self::MACHINE_ID_ERROR => 'MACHINE_ID_ERROR',
     );
 
     /**

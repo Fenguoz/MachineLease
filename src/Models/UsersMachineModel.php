@@ -12,7 +12,7 @@ class UsersMachineModel extends Model
 	 * @var string
 	 */
 	protected $table = 'plugin_users_machine';
-	
+
 	/**
 	 * 时间戳
 	 *

@@ -4,14 +4,14 @@ namespace Fenguoz\MachineLease\Models;
 
 use App\Models\Model;
 
-class UsersMachineOutputModel extends Model
+class UsersModel extends Model
 {
 	/**
 	 * 数据表
 	 *
 	 * @var string
 	 */
-	protected $table = 'plugin_users_machine_output';
+	protected $table = 'plugin_users';
 
 	/**
 	 * 时间戳

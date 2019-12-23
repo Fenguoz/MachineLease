@@ -7,11 +7,17 @@ class CommonException extends \Exception
     const UNKONW = 72100;
     const USER_ERROR = 72101;
     const DATA_ERRPR = 72102;
+    const USER_ID_ERROR = 72103;
+    const USER_ID_EMPTY = 72104;
+    const USER_NOT_EXIST = 72105;
 
     static public $__names = array(
         self::UNKONW => 'UNKNOWN',
         self::USER_ERROR => 'USER_ERROR',
         self::DATA_ERRPR => 'DATA_ERRPR',
+        self::USER_ID_ERROR => 'USER_ID_ERROR',
+        self::USER_ID_EMPTY => 'USER_ID_EMPTY',
+        self::USER_NOT_EXIST => 'USER_NOT_EXIST',
     );
 
     /**

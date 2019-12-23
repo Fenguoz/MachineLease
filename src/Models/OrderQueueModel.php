@@ -12,7 +12,7 @@ class OrderQueueModel extends Model
 	 * @var string
 	 */
 	protected $table = 'plugin_order_queue';
-	
+
 	/**
 	 * 时间戳
 	 *

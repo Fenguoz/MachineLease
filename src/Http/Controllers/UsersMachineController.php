@@ -63,4 +63,28 @@ class UsersMachineController extends Controller
         $data = $usersMachineService->getMachineOutput($params, $option);
         return self::success($data);
     }
+
+    public function extend(Request $request, UsersMachineService $usersMachineService)
+    {
+        $user_id = $request->get('user_id');
+        $machine_id = $request->get('machine_id');
+        $data = $usersMachineService->extend($user_id, $machine_id);
+        return self::success($data);
+    }
+
+    public function refund(Request $request, UsersMachineService $usersMachineService)
+    {
+        $user_id = $request->get('user_id');
+        $machine_id = $request->get('machine_id');
+
+        $data = $usersMachineService->refund($user_id, $machine_id);
+        return self::success($data);
+    }
+
+    public function outputStatistics(Request $request, UsersMachineService $usersMachineService)
+    {
+        $user_id = $request->get('user_id');
+        $data = $usersMachineService->statistics($user_id);
+        return self::success($data);
+    }
 }

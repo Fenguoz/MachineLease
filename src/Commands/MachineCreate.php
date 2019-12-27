@@ -6,8 +6,10 @@ use App\Exceptions\Common\CommonException;
 use App\Models\Order\OrderSkuModel;
 use Exception;
 use Fenguoz\MachineLease\Models\OrderQueueModel;
+use Fenguoz\MachineLease\Models\RewardRuleModel;
 use Fenguoz\MachineLease\Models\UsersMachineModel;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 class MachineCreate extends Command
 {
@@ -73,16 +75,39 @@ class MachineCreate extends Command
                     'order_sub_sn' => $sku->sub_sn,
                     'sku_id' => $sku_info[0]['id'],
                     'sku_name' => $sku_info[0]['title'],
-                    'start_time' => strtotime(date('Y-m-d 0:0:0', time() + 60 * 60 * 24)),//次日生效
-                    'expired_time' => strtotime(date('Y-m-d 23:59:59', time() + $sku_info[0]['cycle'] * 60 * 60 * 24)),
+                    'start_time' => strtotime(date('Y-m-d 0:0:0', time())) + 86400, //次日生效
+                    'expired_time' => strtotime(date('Y-m-d 23:59:59', time())) + $sku_info[0]['cycle'] * 3600,
                     'power' => $sku_info[0]['power'],
                     'computing_power' => $sku->buy_nums,
                     'cycle' => $sku_info[0]['cycle'],
                     'machine_type' => 'BTC',
+                    'type' => 1,
                     'created_at' => $time,
                     'updated_at' => $time,
                 ];
+
+                if (isset($sku_info[0]['giving_rate'])) {
+                    $machine_data[] = [
+                        'user_id' => $sku->buyer_id,
+                        'order_sn' => $sku->order_sn,
+                        'order_sub_sn' => $sku->sub_sn,
+                        'sku_id' => $sku_info[0]['id'],
+                        'sku_name' => $sku_info[0]['title'],
+                        'start_time' => strtotime(date('Y-m-d 0:0:0', time())) + 86400, //次日生效
+                        'expired_time' => strtotime(date('Y-m-d 23:59:59', time())) + $sku_info[0]['cycle'] * 3600,
+                        'power' => $sku_info[0]['power'],
+                        'computing_power' => bcmul($sku->buy_nums, $sku_info[0]['giving_rate'], 8),
+                        'cycle' => $sku_info[0]['cycle'],
+                        'machine_type' => 'BTC',
+                        'type' => 3,
+                        'created_at' => $time,
+                        'updated_at' => $time,
+                    ];
+                }
             }
+
+            // $this->machine_create_before($machine_data);
+            // runHook('machine_create_before', $machine_data);
 
             try {
                 $result = UsersMachineModel::insert($machine_data);
@@ -119,5 +144,39 @@ class MachineCreate extends Command
             throw new CommonException(CommonException::CUSTOMIZE_ERROR, $e->getMessage());
         }
         return $data['data'];
+    }
+
+    public function machine_create_before(&$data)
+    {
+        $level2rules = RewardRuleModel::pluck('rules', 'level')->all();
+
+        foreach ($data as $machine) {
+            if ($machine['type'] == 1) {
+                $user = DB::talbe('rryb_users.user_relation')->where('user_id', $machine['user_id'])->first();
+                if (!$user) continue;
+
+                $root = empty($user->root) ? [] : explode(',', trim($user->root, ','));
+                foreach ($root as $k => $user_id) {
+                    $parent_level = DB::table('rryb_users.user_relation')->where('user_id', $user_id)->value('level');
+                    if (isset($level2rules[$parent_level])) {
+                        $rules = json_decode($level2rules[$parent_level], true);
+                        foreach ($rules as $rule => $limit) {
+                            switch ($rule) {
+                                case 'invite_1':
+                                    break;
+                                case 'team_1':
+                                    break;
+                                case 'team_2':
+                                    break;
+                                case 'team_3':
+                                    break;
+                                case 'self_buy':
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

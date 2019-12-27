@@ -47,13 +47,15 @@ class MachineOutput extends Command
         bcscale(8);
 
         $time = time();
-        $datetime = date('Y-m-d H:i:s',$time);
+        $usdttocny = 7;
+        $start_time = strtotime(date('Y-m-d', $time));
+        $datetime = date('Y-m-d H:i:s', $time);
         //过期矿机
-        $expire_machines = UsersMachineModel::where('expired_time', '<', $time)->where('status', 1)->get();
+        $expire_machines = UsersMachineModel::where('expired_time', '<', $start_time)->where('status', 1)->get();
         $expire_data = [];
         foreach ($expire_machines as $machine) {
-            $extend = 7 + 60 * 60 * 24;
-            if ($machine->expired_time + $extend < $time && $machine->type == 1) { //自动续租
+            $extend = 7 * 86400;
+            if ($machine->expired_time + $extend < $start_time && $machine->type == 1) { //自动续租
                 $expire_data['extend'][] = [
                     'machine_id' => $machine->id,
                     'cycle' => $machine->cycle,
@@ -61,11 +63,12 @@ class MachineOutput extends Command
                 continue;
             }
 
-            if ($machine->expired_time < $time) {
+            if ($machine->expired_time < $start_time && $machine->worth == 0) {
                 $expire_data['expire'][] = $machine->id;
             }
         }
 
+        $this->machine_expire_data_ext($expire_data);
         // runHook('machine_expire_data_ext',$expire_data);
 
         try {
@@ -74,7 +77,7 @@ class MachineOutput extends Command
                     case 'extend':
                         foreach ($machine as $info) {
                             $result = UsersMachineModel::where('id', $info['machine_id'])->update([
-                                'expired_time' => strtotime(date('Y-m-d 23:59:59', $time + $info['cycle'] * 60 * 60 * 24)),
+                                'expired_time' => strtotime(date('Y-m-d 23:59:59', $time)) + $info['cycle'] * 3600,
                             ]);
                             if (!$result) throw new Exception('UserMachine Update');
                         }
@@ -91,10 +94,10 @@ class MachineOutput extends Command
         } catch (Exception $e) {
             echo "[{$datetime}] ERROR: Machine Output {$e->getMessage()} <Line:{$e->getLine()}>\n";
         }
-        
+
 
         //正常矿机
-        $settle_time = $time - 60 * 60 * 24;
+        $settle_time = $start_time - 86400;
         $machines = UsersMachineModel::where('expired_time', '>', $settle_time)
             ->where('start_time', '<', $settle_time)
             ->where('mark', '!=', date('Ymd', $time))
@@ -108,6 +111,7 @@ class MachineOutput extends Command
         foreach ($machine_quotes as $quote) {
             $quotes[$quote->currency_name] = [
                 'rewards_per_unit' => $quote->real_rewards_per_unit,
+                'rewards_per_unit_minute' => bcdiv($quote->real_rewards_per_unit, 24),
                 'electricity' => $quote->electricity,
                 'manage' => $quote->manage,
                 'currency_usdt_worth' => $quote->currency_usdt_worth
@@ -116,12 +120,13 @@ class MachineOutput extends Command
 
         $machine_data = [];
         foreach ($machines as $machine) {
-            $usdttocny = 7;
-            $output = bcmul($quotes[$machine->machine_type]['rewards_per_unit'], $machine->computing_power); // 挖矿产出
+            $remain_time = (int) ($machine->expired_time + 1 - $settle_time) / 3600;
+            $run_hour = min(24, $remain_time);
+            $output = bcmul(bcmul($quotes[$machine->machine_type]['rewards_per_unit_minute'], $run_hour), $machine->computing_power); // 挖矿产出
             $manage_fee = bcmul($output, $quotes[$machine->machine_type]['manage']); // 管理费
-            $electricity_unit_price = bcdiv(bcmul($quotes[$machine->machine_type]['electricity'], 24), bcmul($quotes[$machine->machine_type]['currency_usdt_worth'], $usdttocny)); //电价
+            $electricity_unit_price = bcdiv(bcmul($quotes[$machine->machine_type]['electricity'], $run_hour), bcmul($quotes[$machine->machine_type]['currency_usdt_worth'], $usdttocny)); //电价
             $electricity_fee = bcmul($electricity_unit_price, bcmul($machine->computing_power, $machine->power)); //电费 = 电价 * 矿机功耗 * 算力
-            $real_output = max(0,bcsub($output, bcadd($manage_fee, $electricity_fee))); // 实际产出 = 挖矿产出 + (管理费 - 电费)
+            $real_output = max(0, bcsub($output, bcadd($manage_fee, $electricity_fee))); // 实际产出 = 挖矿产出 + (管理费 - 电费)
 
             $machine_data['machine_output'][] = [
                 "machine_id" => $machine->id,
@@ -131,12 +136,14 @@ class MachineOutput extends Command
                 "electricity" => $quotes[$machine->machine_type]['electricity'],
                 "manage" => $quotes[$machine->machine_type]['manage'],
                 "output" => $real_output,
+                "run_hour" => $run_hour,
                 "created_at" => $time,
                 "updated_at" => $time,
             ];
             $machine_data['machine_ids'][] = $machine->id;
         }
 
+        $this->machine_output_data_ext($machine_data);
         // runHook('machine_output_data_ext',$machine_data);
 
         try {
@@ -144,7 +151,7 @@ class MachineOutput extends Command
             if (!$result) throw new Exception('MachineOutput Insert');
 
             $result = UsersMachineModel::where('expired_time', '>', $settle_time)
-                ->whereIn('id',$machine_data['machine_ids'])
+                ->whereIn('id', $machine_data['machine_ids'])
                 ->where('start_time', '<', $settle_time)
                 ->where('mark', '!=', date('Ymd', $time))
                 ->where('status', 1)
@@ -156,5 +163,13 @@ class MachineOutput extends Command
         } catch (Exception $e) {
             echo "[{$datetime}] ERROR: Machine Output {$e->getMessage()} <Line:{$e->getLine()}>\n";
         }
+    }
+
+    public function machine_expire_data_ext(&$data)
+    {
+    }
+
+    public function machine_output_data_ext(&$data)
+    {
     }
 }

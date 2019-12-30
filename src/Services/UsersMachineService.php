@@ -23,10 +23,23 @@ class UsersMachineService extends Service
 
         foreach ($data as $k => $v) {
             $v->output_amount = UsersMachineOutputModel::where('machine_id', $v->id)->sum('output');
-            $v->cycle_show = '3年';
-            $v->expired_day = '30';
-            $v->can_extend = 1;
-            $v->can_refund = 1;
+
+            $cycle_str = '';
+            $cycle_day = (int)$v->cycle/24;
+            $cycle_hour = (int)$v->cycle%24;
+            if($cycle_day > 0) $cycle_str .= $cycle_day.'天 ';
+            if($cycle_hour > 0) $cycle_str .= $cycle_hour.'小时';
+            $v->cycle_show = $cycle_str;
+
+            $expired_str = '';
+            $expired_day = (int)$v->expired_time/86400;
+            if($expired_day > 0) $expired_str .= $expired_day.'天 ';
+            $expired_hour = (int)($v->cycle/3600)%24;
+            if($expired_hour > 0) $expired_str .= $expired_hour.'小时';
+            $v->expired_day = $expired_str;
+
+            $v->can_extend = ($v->worth > 0 && $v->type == 1 && $v->expired_time < time()) ? 1: 0;
+            $v->can_refund = ($v->worth > 0 && $v->type == 1 && $v->expired_time < time()) ? 1: 0;
         }
 
         return $data;
@@ -68,6 +81,8 @@ class UsersMachineService extends Service
         if ($level_info) {
             $rules = json_decode($level_info->rules, true);
             foreach ($rules as $type => $rule) {
+
+                $team_info = json_decode($user, true);
                 switch ($type) {
                     case 'self_cert':
                         $status = DB::table('rryb.certification')->where('user_id', $user_id)->value('status') ?? 0;
@@ -76,27 +91,27 @@ class UsersMachineService extends Service
                         $description = '完成且通过实名认证';
                         break;
                     case 'self_buy':
-                        $actual = $user->power;
+                        $actual = isset($team_info['self']['buy']) ? $team_info['self']['buy'] : 0;
                         $title = '自持算力T';
                         $description = '自持矿机算力达到' . $rule . 'T';
                         break;
                     case 'invite_1':
-                        $actual = $user->power;
+                        $actual = isset($team_info['invite']['1']) ? $team_info['invite']['1'] : 0;
                         $title = '直推实名人数';
                         $description = '直推实名会员数达到' . $rule;
                         break;
                     case 'team_1':
-                        $actual = $user->power;
+                        $actual = isset($team_info['team']['1']) ? $team_info['team']['1'] : 0;
                         $title = '伞下实名人数';
                         $description = '伞下总实名会员数达到' . $rule;
                         break;
                     case 'team_2':
-                        $actual = $user->power;
+                        $actual = isset($team_info['team']['2']) ? $team_info['team']['2'] : 0;
                         $title = '银牌会员人数';
                         $description = '伞下银牌会员数数达到' . $rule;
                         break;
                     case 'team_3':
-                        $actual = $user->power;
+                        $actual = isset($team_info['team']['3']) ? $team_info['team']['3'] : 0;
                         $title = '金牌会员人数';
                         $description = '伞下金牌会员数数达到' . $rule;
                         break;

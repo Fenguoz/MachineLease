@@ -21,10 +21,12 @@ class UsersMachineService extends Service
         if (!$data)
             throw new CommonException(CommonException::DATA_ERRPR);
 
-        foreach($data as $k => $v){
-            $v->output_amount = UsersMachineOutputModel::where('machine_id',$v->id)->sum('output');
+        foreach ($data as $k => $v) {
+            $v->output_amount = UsersMachineOutputModel::where('machine_id', $v->id)->sum('output');
             $v->cycle_show = '3年';
             $v->expired_day = '30';
+            $v->can_extend = 1;
+            $v->can_refund = 1;
         }
 
         return $data;
@@ -53,7 +55,7 @@ class UsersMachineService extends Service
         $user = UsersModel::where([
             'user_id' => $user_id
         ])->first();
-        if (!$user){
+        if (!$user) {
             UsersModel::insert(['user_id' => $user_id]);
             $user = UsersModel::where([
                 'user_id' => $user_id
@@ -67,36 +69,41 @@ class UsersMachineService extends Service
             $rules = json_decode($level_info->rules, true);
             foreach ($rules as $type => $rule) {
                 switch ($type) {
-                    case 'cert':
-                        $status = DB::table('rryb_kuangchang.certification')->where('user_id', $user_id)->value('status') ?? 0;
+                    case 'self_cert':
+                        $status = DB::table('rryb.certification')->where('user_id', $user_id)->value('status') ?? 0;
                         $actual = ($status == 1 ? 1 : 0);
                         $title = '实名认证';
                         $description = '完成且通过实名认证';
                         break;
                     case 'self_buy':
                         $actual = $user->power;
-                        $title = '自购';
-                        $description = '购物矿机算力达到' . $rule . 'T';
+                        $title = '自持算力T';
+                        $description = '自持矿机算力达到' . $rule . 'T';
                         break;
                     case 'invite_1':
                         $actual = $user->power;
-                        $title = '直推实名数';
+                        $title = '直推实名人数';
                         $description = '直推实名会员数达到' . $rule;
                         break;
                     case 'team_1':
                         $actual = $user->power;
-                        $title = '伞下实名数';
+                        $title = '伞下实名人数';
                         $description = '伞下总实名会员数达到' . $rule;
                         break;
                     case 'team_2':
                         $actual = $user->power;
-                        $title = '银牌会员数';
+                        $title = '银牌会员人数';
                         $description = '伞下银牌会员数数达到' . $rule;
                         break;
                     case 'team_3':
                         $actual = $user->power;
-                        $title = '金牌会员数';
-                        $description = '伞下金牌会员数数达到' . $rule . 'T';
+                        $title = '金牌会员人数';
+                        $description = '伞下金牌会员数数达到' . $rule;
+                        break;
+                    default:
+                        $actual = 0;
+                        $title = '**会员人数';
+                        $description = '伞下**会员数数达到99';
                         break;
                 }
 
@@ -163,12 +170,12 @@ class UsersMachineService extends Service
         $output = [];
         $day = [];
         $amount = 0;
-        for($i = 0;$i < $times;$i++){
-            $time = time()-$i*86400;
+        for ($i = 0; $i < $times; $i++) {
+            $time = time() - $i * 86400;
             $number = UsersMachineOutputModel::where('user_id', $user_id)->whereBetween('created_at', [strtotime(date('Y-m-d 0:0:0', $time)), strtotime(date('Y-m-d 23:59:59', $time))])->sum('output') ?? '0.00000000';
             $output[] = $number;
-            $day[] = date('d',$time);
-            $amount = bcadd($amount,$number,8);
+            $day[] = date('d', $time);
+            $amount = bcadd($amount, $number, 8);
         }
 
         return [

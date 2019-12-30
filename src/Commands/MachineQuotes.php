@@ -4,6 +4,7 @@ namespace Fenguoz\MachineLease\Commands;
 
 use Fenguoz\MachineLease\Models\MachineQuotesModel;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 class MachineQuotes extends Command
 {

@@ -46,6 +46,8 @@ class RouteRegistrar
             $router->get('/get.user.machine.info', ['uses' => 'UsersMachineController@getUserInfo']);
             $router->get('/get.user.machine.output', ['uses' => 'UsersMachineController@getMachineOutput']);
             $router->get('/get.user.machine.output.statistics', ['uses' => 'UsersMachineController@outputStatistics']);
+            $router->post('/post.user.machine.extend', ['uses' => 'UsersMachineController@extend']);
+            $router->post('/post.user.machine.refund', ['uses' => 'UsersMachineController@refund']);
         });
         $this->router->group(['middleware' => 'token:admin'], function ($router) {
             $router->get('/get.machine.list', ['uses' => 'UsersMachineController@machineList']);

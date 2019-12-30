@@ -8,6 +8,8 @@ use Exception;
 use Fenguoz\MachineLease\Models\OrderQueueModel;
 use Fenguoz\MachineLease\Models\RewardRuleModel;
 use Fenguoz\MachineLease\Models\UsersMachineModel;
+use Fenguoz\MachineLease\Models\UsersModel;
+use Fenguoz\MachineLease\Models\WalletQueueModel;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -48,7 +50,6 @@ class MachineCreate extends Command
             'client_id' => $this->argument('client_id'),
         ]);
 
-
         $count = 10;
         $time = time();
         $data = OrderQueueModel::where([
@@ -61,6 +62,7 @@ class MachineCreate extends Command
 
         foreach ($data as $k => $v) {
             $skus = OrderSkuModel::where('sub_sn', $v->order_sub_sn)->get();
+
             if (!$skus) continue;
 
             $machine_data = [];
@@ -82,11 +84,12 @@ class MachineCreate extends Command
                     'cycle' => $sku_info[0]['cycle'],
                     'machine_type' => 'BTC',
                     'type' => 1,
+                    'worth' => bcmul($sku->sku_price, $sku->buy_nums),
                     'created_at' => $time,
                     'updated_at' => $time,
                 ];
 
-                if (isset($sku_info[0]['giving_rate'])) {
+                if (isset($sku_info[0]['giving_rate']) && $sku_info[0]['giving_rate'] > 0) {
                     $machine_data[] = [
                         'user_id' => $sku->buyer_id,
                         'order_sn' => $sku->order_sn,
@@ -100,16 +103,43 @@ class MachineCreate extends Command
                         'cycle' => $sku_info[0]['cycle'],
                         'machine_type' => 'BTC',
                         'type' => 3,
+                        'worth' => 0,
                         'created_at' => $time,
                         'updated_at' => $time,
                     ];
                 }
             }
 
-            // $this->machine_create_before($machine_data);
+            $this->machine_create_before($machine_data);
             // runHook('machine_create_before', $machine_data);
 
             try {
+                foreach ($machine_data as $machine) {
+                    $user_info = UsersModel::where('user_id', $machine['user_id'])->first();
+                    if (!$user_info) {
+                        $result = UsersModel::insert(['user_id' => $machine['user_id']]);
+                        if (!$result) throw new Exception();
+                        $user_info = UsersModel::where('user_id', $machine['user_id'])->first();
+                    }
+
+                    switch ($machine['type']) {
+                        case 1:
+                            $team_info = empty($user_info->team_info) ? [] : json_decode($user_info->team_info, true);
+                            $team_info['self']['buy'] = isset($team_info['self']['buy']) ? $team_info['self']['buy'] + $machine['computing_power'] : $machine['computing_power'];
+                            $user_info->team_info = json_encode($team_info);
+                            $user_info->power = bcadd($machine['computing_power'],$user_info->power,8);
+                            $user_info->save();
+                            break;
+                        case 3:
+                            $user_info->reward_power = bcadd($machine['computing_power'],$user_info->reward_power,8);
+                            $user_info->save();
+                            break;
+                        case 10:
+                            $user_info->reward_team_power = bcadd($machine['computing_power'],$user_info->reward_team_power,8);
+                            $user_info->save();
+                            break;
+                    }
+                }
                 $result = UsersMachineModel::insert($machine_data);
                 if (!$result) throw new Exception('UsersMachine:Add Error');
 
@@ -130,7 +160,7 @@ class MachineCreate extends Command
             $http = new \GuzzleHttp\Client;
             $response = $http->post(env('GOODS_URL') . '/goods.GoodsController.getSkus', [
                 'headers' => [
-                    'Authorization' => 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImp0aSI6IjJmNWI5ZGM4OWE3YjlmZjhkOGVkNjJmZGQxODIxMjIyYzg2MmU3MTRiNWI0MTg4ZDZkNWRjZGQzMTk5MjI5NzVmYjMzOTgwMmYzZTY2OTBjIn0.eyJhdWQiOiIxIiwianRpIjoiMmY1YjlkYzg5YTdiOWZmOGQ4ZWQ2MmZkZDE4MjEyMjJjODYyZTcxNGI1YjQxODhkNmQ1ZGNkZDMxOTkyMjk3NWZiMzM5ODAyZjNlNjY5MGMiLCJpYXQiOjE1NzY4MzIwNTksIm5iZiI6MTU3NjgzMjA1OSwiZXhwIjoxNTc3NDM2ODU5LCJzdWIiOiI0NiIsInNjb3BlcyI6WyIqIl19.h1LEkXgxX7NvYO65rQm1C05XN0Ey_jwYmG6lkprVuVogFzO8PjgO-4Hv2dblnz-sswOx5MN_7ad9nsreFxYS5_jKCG-C1WJW8lJuBBICqgsXDOyRVfSUWCoSwwNo7RI35bCSbXXXuB6Kv303Z0J4sGHwB2cPO--m5rTnMr-Xqx17ryZsdHlvPfOdOPgUNVkvquWAU-tqnQRa5DsV-8npYHH9EmfW77TfmYjCORr2cArMn4BgflKhkDouq_XaEPN2WoD0HJWiJ8ISx3JXQQWsV8OPgIJpk9fB3mVIRGql3AqsmMwfaseYBeBvHE8MWr-3AJGZ89PfxWtksG6pgSq_Qw3_ilT_5_GAsiYVqK_wXaPOFsg69QzjrDamPIyD0grqYPIY32uI3JlyztUeDJFtJ-XE1FcrBU_ooIb8XrQEIhz2qoxlNbd0Et6Z9p3Xv0KMuvoxtiSB9OqfK-QOQXQkFZZlwb5si-cHyMQ-M8oi88aBX9vBXeL_x0XN8fpStvFMPJ8ctMY3Ju_OpTE9bWfG89ThKw1vp0uRlXFJjSpfzy350Xr0umuJTUT1UGjuQ3oHArNsYuhjGuLjOwgC_Qtp-HG31yHhH8_8gb3p5EbTHmnYezDu6mLrtPs6f4KPkn0x4SvmmtGRFYYMzNLSpnXt61Qcu9GgyvgM11zd5CaMSBs'
+                    'Authorization' => 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImp0aSI6IjY5MjM0MWI5MTI0YjIxYzdmZjY5NGQxNTYxOTFlOGJhNWFhZmJkYWE5Mjg5MmExZTFmNzdiODIxNmEwMWI0YjRiYzdhYTU2ZTZjMDA4ZmM1In0.eyJhdWQiOiIxIiwianRpIjoiNjkyMzQxYjkxMjRiMjFjN2ZmNjk0ZDE1NjE5MWU4YmE1YWFmYmRhYTkyODkyYTFlMWY3N2I4MjE2YTAxYjRiNGJjN2FhNTZlNmMwMDhmYzUiLCJpYXQiOjE1Nzc1NjQyNDEsIm5iZiI6MTU3NzU2NDI0MSwiZXhwIjoxNTc4MTY5MDQxLCJzdWIiOiIxIiwic2NvcGVzIjpbIioiXX0.WD9FAX4fFlHenm449v3oxVcF7_h9exrpIWv-2_5GaL3J9Tq1em6kkUiLKEVJrH_hM1wOpjEmrxgLuoAYgIbXlyqAFMcmH6Wj-vbDpvXSb_MZ_NPKjvOARSH0GDEwiAm1WD82-LSxXPnaaXP8sNDN6KCMjE44RpUY4CD-oDzQnzT_B75CvfcO_TIKmyaigHR_Q9cG3P8o8W2ZuS4DeYlKS0yeGVsTdoBoLNCfTKMoBOYO0ldkX-1OCb9ZpsAHRychCci7L8BTzA2UYmnG9y5MaiFcOMFOuBk0-oqXLAFOQ4xydFaSIIanpJGOU9vnl7gwjyLo4d-fsPM82eTY1qUpJpThePt2Xt7_y2X3v_S0Liu0TEpdGD8ZfMHrmyZUKGyvP1qh28tf4A4bknfXeTWs6VFglwotZml7UJ24a8iDIz33j7WwVanmWl0yv6GO_KoxSBMeksgfIuNo_nr_217Kmxb81yB2clsIEsip7EwCLG-owRu66UmLRgK29OWh5vs-vSrkL_YD2dOnP_ZprkalgxvFIECI8EvBcbs0tTWCeNhxPwuJbZg8XkYcvsDugiZIkIVub6__WT6xcjjtgMvNdPMa7WVdFnF81fIX0olDngjw_cpVUHdDXi7Efs3aNEm0BVDxqxezH_yf1FkbXN1KEYeb81qz68OwYHYdFmG9S44'
                 ],
                 'query' => [
                     'sku_id' => $sku_id,
@@ -148,35 +178,93 @@ class MachineCreate extends Command
 
     public function machine_create_before(&$data)
     {
-        $level2rules = RewardRuleModel::pluck('rules', 'level')->all();
+        $reward_rule_data = RewardRuleModel::get();
 
+        $reward_rule = [];
+        foreach ($reward_rule_data as $v) {
+            if ($v->tier_restrictions) {
+                $tier_arr = explode(',', $v->tier_restrictions);
+
+                $tier2rate = [];
+                foreach ($tier_arr as $value) {
+                    list($tier, $rate) = explode(':', $value);
+                    $tier2rate[$tier] = $rate;
+                }
+                $reward_rule[$v->mark][$v->level_restrictions] = [
+                    'tier' => $tier2rate,
+                    'is_dynamic_reward' => $v->is_dynamic_reward,
+                ];
+            }
+        }
+        foreach ($reward_rule as $key => $value) {
+            $$key = $value; // $reward $see_point_reward
+        }
+
+        $machine_data = [];
+        $reward_data = [];
         foreach ($data as $machine) {
             if ($machine['type'] == 1) {
-                $user = DB::talbe('rryb_users.user_relation')->where('user_id', $machine['user_id'])->first();
+                $user = DB::table('rryb_users.user_relation')->where('user_id', $machine['user_id'])->first();
                 if (!$user) continue;
 
                 $root = empty($user->root) ? [] : explode(',', trim($user->root, ','));
                 foreach ($root as $k => $user_id) {
                     $parent_level = DB::table('rryb_users.user_relation')->where('user_id', $user_id)->value('level');
-                    if (isset($level2rules[$parent_level])) {
-                        $rules = json_decode($level2rules[$parent_level], true);
-                        foreach ($rules as $rule => $limit) {
-                            switch ($rule) {
-                                case 'invite_1':
-                                    break;
-                                case 'team_1':
-                                    break;
-                                case 'team_2':
-                                    break;
-                                case 'team_3':
-                                    break;
-                                case 'self_buy':
-                                    break;
-                            }
-                        }
+
+                    // 推荐
+                    if (isset($reward[$parent_level]) && isset($reward[$parent_level]['tier'][$k + 1])) {
+                        $reward_amount = ($reward[$parent_level]['is_dynamic_reward'] == 1) ? bcmul($reward[$parent_level]['tier'][$k + 1], $machine['computing_power'], 8) : $reward[$parent_level]['tier'][$k + 1];
+                        $machine_data[] = [
+                            'user_id' => $user_id,
+                            'order_sn' => $machine['order_sn'],
+                            'order_sub_sn' => $machine['order_sub_sn'],
+                            'sku_id' => $machine['sku_id'],
+                            'sku_name' => $machine['sku_name'],
+                            'start_time' => $machine['start_time'], //次日生效
+                            'expired_time' => $machine['expired_time'],
+                            'power' => $machine['power'],
+                            'computing_power' => $reward_amount,
+                            'cycle' => $machine['cycle'],
+                            'machine_type' => $machine['machine_type'],
+                            'type' => 10,
+                            'worth' => 0,
+                            'created_at' => $machine['created_at'],
+                            'updated_at' => $machine['updated_at'],
+                        ];
+                    }
+
+                    // 见点
+                    if (isset($see_point_reward[$parent_level]) && isset($see_point_reward[$parent_level]['tier'][$k + 1])) {
+                        $reward_amount = ($see_point_reward[$parent_level]['is_dynamic_reward'] == 1) ? bcmul($see_point_reward[$parent_level]['tier'][$k + 1], $machine['computing_power'], 8) : $see_point_reward[$parent_level]['tier'][$k + 1];
+                        $reward_data[] = [
+                            'user_id' => $user_id,
+                            'order_sn' => $machine['order_sn'],
+                            'order_sub_sn' => $machine['order_sub_sn'],
+                            'money' => $reward_amount,
+                            'type_id' => 2,
+                            'coin_id' => 10, //usdt
+                            'remark' => '管理津贴',
+                            'created_at' => time(),
+                            'updated_at' => time(),
+                        ];
                     }
                 }
             }
         }
+
+        if (!empty($reward_data)) {
+            foreach($reward_data as $v){
+                $user_info = UsersModel::where('user_id', $v['user_id'])->first();
+                if (!$user_info) {
+                    $result = UsersModel::insert(['user_id' => $v['user_id']]);
+                    if (!$result) throw new Exception();
+                    $user_info = UsersModel::where('user_id', $v['user_id'])->first();
+                }
+                $user_info->reward_commission = bcadd($user_info->reward_commission,$v['money'],8);
+                $user_info->save();
+            }
+            WalletQueueModel::insert($reward_data);
+        }
+        if (!empty($machine_data)) $data = array_merge($data, $machine_data);
     }
 }

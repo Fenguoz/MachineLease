@@ -6,6 +6,7 @@ use Exception;
 use Fenguoz\MachineLease\Models\MachineQuotesModel;
 use Fenguoz\MachineLease\Models\UsersMachineModel;
 use Fenguoz\MachineLease\Models\UsersMachineOutputModel;
+use Fenguoz\MachineLease\Models\WalletQueueModel;
 use Illuminate\Console\Command;
 
 class MachineOutput extends Command
@@ -129,18 +130,32 @@ class MachineOutput extends Command
             $real_output = max(0, bcsub($output, bcadd($manage_fee, $electricity_fee))); // 实际产出 = 挖矿产出 + (管理费 - 电费)
 
             $machine_data['machine_output'][] = [
-                "machine_id" => $machine->id,
-                "user_id" => $machine->user_id,
-                "electricity_fee" => $electricity_fee,
-                "manage_fee" => $manage_fee,
-                "electricity" => $quotes[$machine->machine_type]['electricity'],
-                "manage" => $quotes[$machine->machine_type]['manage'],
-                "output" => $real_output,
-                "run_hour" => $run_hour,
-                "created_at" => $time,
-                "updated_at" => $time,
+                'machine_id' => $machine->id,
+                'user_id' => $machine->user_id,
+                'electricity_fee' => $electricity_fee,
+                'manage_fee' => $manage_fee,
+                'electricity' => $quotes[$machine->machine_type]['electricity'],
+                'manage' => $quotes[$machine->machine_type]['manage'],
+                'output' => $real_output,
+                'run_hour' => $run_hour,
+                'created_at' => $time,
+                'updated_at' => $time,
             ];
             $machine_data['machine_ids'][] = $machine->id;
+
+            if ($real_output > 0) {
+                $machine_data['machine_output_queue'][] = [
+                    'user_id' => $machine->user_id,
+                    'type_id' => 1,
+                    'coin_id' => 14,
+                    'money' => $real_output,
+                    'remark' => '矿机产出',
+                    'created_at' => time(),
+                    'updated_at' => time(),
+                    'order_sn' => $machine->order_sn,
+                    'order_sub_sn' => $machine->order_sub_sn,
+                ];
+            }
         }
 
         $this->machine_output_data_ext($machine_data);
@@ -149,6 +164,11 @@ class MachineOutput extends Command
         try {
             $result = UsersMachineOutputModel::insert($machine_data['machine_output']);
             if (!$result) throw new Exception('MachineOutput Insert');
+
+            if (!empty($machine_data['machine_output_queue'])) {
+                $result = WalletQueueModel::insert($machine_data['machine_output_queue']);
+                if (!$result) throw new Exception('WalletQueue Insert');
+            }
 
             $result = UsersMachineModel::where('expired_time', '>', $settle_time)
                 ->whereIn('id', $machine_data['machine_ids'])

@@ -4,10 +4,15 @@ namespace Fenguoz\MachineLease\Exceptions;
 
 class UsersMachineException extends \Exception
 {
-    const UNKONW = 72000;
+    const MACHINE_NOT_EXIST = 72301;
+    const MACHINE_CANT_EXTEND = 72302;
+    const NOT_PERMISSION = 72303;
+    const MACHINE_GOODS_NOT_EXIST = 72304;
 
     static public $__names = array(
-        self::UNKONW => 'UNKNOWN',
+        self::MACHINE_NOT_EXIST => 'MACHINE_NOT_EXIST',
+        self::MACHINE_CANT_EXTEND => 'MACHINE_CANT_EXTEND',
+        self::MACHINE_GOODS_NOT_EXIST => 'MACHINE_GOODS_NOT_EXIST',
     );
 
     /**

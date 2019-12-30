@@ -2,6 +2,7 @@
 
 namespace Fenguoz\MachineLease\Services;
 
+use App\Services\Order\Client\GoodsService;
 use App\Services\Service;
 use Fenguoz\MachineLease\Exceptions\CommonException;
 use Fenguoz\MachineLease\Exceptions\MachineException;
@@ -10,6 +11,7 @@ use Fenguoz\MachineLease\Models\LevelModel;
 use Fenguoz\MachineLease\Models\UsersMachineModel;
 use Fenguoz\MachineLease\Models\UsersMachineOutputModel;
 use Fenguoz\MachineLease\Models\UsersModel;
+use Fenguoz\MachineLease\Models\WalletQueueModel;
 use Illuminate\Support\Facades\DB;
 
 class UsersMachineService extends Service
@@ -25,21 +27,21 @@ class UsersMachineService extends Service
             $v->output_amount = UsersMachineOutputModel::where('machine_id', $v->id)->sum('output');
 
             $cycle_str = '';
-            $cycle_day = (int)$v->cycle/24;
-            $cycle_hour = (int)$v->cycle%24;
-            if($cycle_day > 0) $cycle_str .= $cycle_day.'天 ';
-            if($cycle_hour > 0) $cycle_str .= $cycle_hour.'小时';
+            $cycle_day = (int) $v->cycle / 24;
+            $cycle_hour = (int) $v->cycle % 24;
+            if ($cycle_day > 0) $cycle_str .= $cycle_day . '天 ';
+            if ($cycle_hour > 0) $cycle_str .= $cycle_hour . '小时';
             $v->cycle_show = $cycle_str;
 
             $expired_str = '';
-            $expired_day = (int)$v->expired_time/86400;
-            if($expired_day > 0) $expired_str .= $expired_day.'天 ';
-            $expired_hour = (int)($v->cycle/3600)%24;
-            if($expired_hour > 0) $expired_str .= $expired_hour.'小时';
+            $expired_day = (int) $v->expired_time / 86400;
+            if ($expired_day > 0) $expired_str .= $expired_day . '天 ';
+            $expired_hour = (int) ($v->cycle / 3600) % 24;
+            if ($expired_hour > 0) $expired_str .= $expired_hour . '小时';
             $v->expired_day = $expired_str;
 
-            $v->can_extend = ($v->worth > 0 && $v->type == 1 && $v->expired_time < time()) ? 1: 0;
-            $v->can_refund = ($v->worth > 0 && $v->type == 1 && $v->expired_time < time()) ? 1: 0;
+            $v->can_extend = ($v->worth > 0 && $v->type == 1 && $v->expired_time < time()) ? 1 : 0;
+            $v->can_refund = ($v->worth > 0 && $v->type == 1 && $v->expired_time < time()) ? 1 : 0;
         }
 
         return $data;
@@ -163,6 +165,56 @@ class UsersMachineService extends Service
         if ($machine_id <= 0)
             throw new MachineException(MachineException::MACHINE_ID_ERROR);
 
+        $machine = UsersMachineModel::where([
+            'id' => $machine_id,
+        ])->first();
+        if (!$machine)
+            throw new UsersMachineException(UsersMachineException::MACHINE_NOT_EXIST);
+        if ($machine->type != 1 || $machine->worth == 0 || $machine->expired_time > time())
+            throw new UsersMachineException(UsersMachineException::MACHINE_CANT_EXTEND);
+        if ($user_id != $machine->user_id)
+            throw new UsersMachineException(UsersMachineException::NOT_PERMISSION);
+        $sku_info = (new GoodsService)->good($machine->sku_id);
+        if (!isset($sku_info[0]))
+            throw new UsersMachineException(UsersMachineException::MACHINE_GOODS_NOT_EXIST);
+
+        DB::beginTranscation();
+        try {
+            //收益储存发放
+            if ($machine->output_storage > 0) {
+                $result = WalletQueueModel::insert([
+                    'user_id' => $user_id,
+                    'type_id' => 1,
+                    'coin_id' => 14,
+                    'money' => $machine->output_storage,
+                    'remark' => '矿机产出',
+                    'order_sn' => $machine->order_sn,
+                    'order_sub_sn' => $machine->order_sub_sn,
+                    'created_at' => time(),
+                    'updated_at' => time(),
+                ]);
+                if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
+            }
+
+            $machine_ids = UsersMachineModel::where([
+                'order_sn' => $machine->order_sn,
+                'user_id' => $user_id
+            ])->pluck('id');
+
+            $result = UsersMachineModel::whereIn('id', $machine_ids)->update([
+                'cycle' => $sku_info[0]['cycle'],
+                'status' => 1,
+                'start_time' => strtotime(date('Y-m-d 0:0:0', time())) + 86400, //次日生效
+                'expired_time' => strtotime(date('Y-m-d 23:59:59', time())) + $sku_info[0]['cycle'] * 3600,
+                'output_storage' => 0,
+            ]);
+            if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
+
+            DB::commit();
+        } catch (CommonException $e) {
+            DB::rollBack();
+            throw new CommonException(CommonException::CUSTOMIZE_ERROR, $e->getMessage());
+        }
         return true;
     }
 
@@ -173,6 +225,40 @@ class UsersMachineService extends Service
         if ($machine_id <= 0)
             throw new MachineException(MachineException::MACHINE_ID_ERROR);
 
+        $machine = UsersMachineModel::where([
+            'id' => $machine_id,
+        ])->first();
+        if (!$machine)
+            throw new UsersMachineException(UsersMachineException::MACHINE_NOT_EXIST);
+        if ($machine->type != 1 || $machine->worth == 0 || $machine->expired_time > time())
+            throw new UsersMachineException(UsersMachineException::MACHINE_CANT_EXTEND);
+        if ($user_id != $machine->user_id)
+            throw new UsersMachineException(UsersMachineException::NOT_PERMISSION);
+
+
+        //本金返还
+        try {
+            $result = WalletQueueModel::insert([
+                'user_id' => $user_id,
+                'type_id' => 3,
+                'coin_id' => 10,
+                'money' => $machine->worth,
+                'remark' => '矿机退租',
+                'order_sn' => $machine->order_sn,
+                'order_sub_sn' => $machine->order_sub_sn,
+                'created_at' => time(),
+                'updated_at' => time(),
+            ]);
+            if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
+
+            $machine->worth = 0;
+            $machine->status = 0;
+            $machine->save();
+            DB::commit();
+        } catch (CommonException $e) {
+            DB::rollBack();
+            throw new CommonException(CommonException::CUSTOMIZE_ERROR, $e->getMessage());
+        }
         return true;
     }
 

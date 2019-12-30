@@ -10,6 +10,8 @@ class CommonException extends \Exception
     const USER_ID_ERROR = 72103;
     const USER_ID_EMPTY = 72104;
     const USER_NOT_EXIST = 72105;
+    const UDATE_ERROR = 72106;
+    const CUSTOMIZE_ERROR = 72107;
 
     static public $__names = array(
         self::UNKONW => 'UNKNOWN',
@@ -18,6 +20,8 @@ class CommonException extends \Exception
         self::USER_ID_ERROR => 'USER_ID_ERROR',
         self::USER_ID_EMPTY => 'USER_ID_EMPTY',
         self::USER_NOT_EXIST => 'USER_NOT_EXIST',
+        self::UDATE_ERROR => 'UDATE_ERROR',
+        self::CUSTOMIZE_ERROR => 'CUSTOMIZE_ERROR',
     );
 
     /**

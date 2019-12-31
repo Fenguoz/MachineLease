@@ -100,7 +100,7 @@ class MachineOutput extends Command
         //正常矿机
         $settle_time = $start_time - 86400;
         $machines = UsersMachineModel::where('expired_time', '>', $settle_time)
-            ->where('start_time', '<', $settle_time)
+            ->where('start_time', '<=', $settle_time)
             ->where('mark', '!=', date('Ymd', $time))
             ->where('status', 1)
             ->get();
@@ -172,7 +172,7 @@ class MachineOutput extends Command
 
             $result = UsersMachineModel::where('expired_time', '>', $settle_time)
                 ->whereIn('id', $machine_data['machine_ids'])
-                ->where('start_time', '<', $settle_time)
+                ->where('start_time', '<=', $settle_time)
                 ->where('mark', '!=', date('Ymd', $time))
                 ->where('status', 1)
                 ->update([

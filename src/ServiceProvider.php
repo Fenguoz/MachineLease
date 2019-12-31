@@ -24,6 +24,7 @@ class ServiceProvider extends BaseProvider
                 Commands\MachineCreate::class,
                 Commands\MachineOutput::class,
                 Commands\MachineQuotes::class,
+                Commands\WalletSettle::class,
             ]);
         }
     }

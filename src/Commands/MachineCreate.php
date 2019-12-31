@@ -113,6 +113,7 @@ class MachineCreate extends Command
             $this->machine_create_before($machine_data);
             // runHook('machine_create_before', $machine_data);
 
+            DB::beginTransaction();
             try {
                 foreach ($machine_data as $machine) {
                     $user_info = UsersModel::where('user_id', $machine['user_id'])->first();
@@ -146,8 +147,10 @@ class MachineCreate extends Command
                 $result = OrderQueueModel::where(['id' => $v->id, 'status' => 0])->update(['status' => 1]);
                 if (!$result) throw new Exception('OrderQueue:Update Error');
                 echo "MachineLease:Success!}";
+                DB::commit();
             } catch (Exception $e) {
                 echo "MachineLease:{$e->getMessage()}!";
+                DB::rollBack();
             }
         }
     }

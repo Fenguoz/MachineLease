@@ -6,8 +6,10 @@ use Exception;
 use Fenguoz\MachineLease\Models\MachineQuotesModel;
 use Fenguoz\MachineLease\Models\UsersMachineModel;
 use Fenguoz\MachineLease\Models\UsersMachineOutputModel;
+use Fenguoz\MachineLease\Models\UsersModel;
 use Fenguoz\MachineLease\Models\WalletQueueModel;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 class MachineOutput extends Command
 {
@@ -65,13 +67,19 @@ class MachineOutput extends Command
             }
 
             if ($machine->expired_time < $start_time && $machine->worth == 0) {
-                $expire_data['expire'][] = $machine->id;
+                $expire_data['expire'][] = [
+                    'machine_id' => $machine->id,
+                    'computing_power' => $machine->computing_power,
+                    'type' => $machine->type,
+                    'user_id' => $machine->user_id,
+                ];
             }
         }
 
         $this->machine_expire_data_ext($expire_data);
         // runHook('machine_expire_data_ext',$expire_data);
 
+        DB::beginTransaction();
         try {
             foreach ($expire_data as $type => $machine) {
                 switch ($type) {
@@ -84,23 +92,40 @@ class MachineOutput extends Command
                         }
                         break;
                     case 'expire':
-                        $result = UsersMachineModel::whereIn('id', $machine)->update([
-                            'status' => 0
-                        ]);
-                        if (!$result) throw new Exception('UserMachine Update');
+                        foreach ($machine as $info) {
+                            $result = UsersMachineModel::where('id', $info['machine_id'])->update([
+                                'status' => 0
+                            ]);
+                            if (!$result) throw new Exception('UserMachine Update');
+
+                            //算力更新
+                            switch ($info['type']) {
+                                case 1:
+                                    $result = UsersModel::where('user_id', $info['user_id'])->decrement('power', $info['computing_power']);
+                                    break;
+                                case 3:
+                                    $result = UsersModel::where('user_id', $info['user_id'])->decrement('reward_power', $info['computing_power']);
+                                    break;
+                                case 10:
+                                    $result = UsersModel::where('user_id', $info['user_id'])->decrement('reward_team_power', $info['computing_power']);
+                                    break;
+                            }
+                            if (!$result) throw new Exception('UserMachine Update');
+                        }
                         break;
                 }
             }
             echo "[{$datetime}] SUCCESS: Machine Expire \n";
+            DB::commit();
         } catch (Exception $e) {
             echo "[{$datetime}] ERROR: Machine Output {$e->getMessage()} <Line:{$e->getLine()}>\n";
+            DB::rollBack();
         }
 
 
         //正常矿机
         $settle_time = $start_time - 86400;
-        $machines = UsersMachineModel::where('expired_time', '>', $settle_time)
-            ->where('start_time', '<=', $settle_time)
+        $machines = UsersMachineModel::where('start_time', '<=', $settle_time)
             ->where('mark', '!=', date('Ymd', $time))
             ->where('status', 1)
             ->get();
@@ -129,6 +154,13 @@ class MachineOutput extends Command
             $electricity_fee = bcmul($electricity_unit_price, bcmul($machine->computing_power, $machine->power)); //电费 = 电价 * 矿机功耗 * 算力
             $real_output = max(0, bcsub($output, bcadd($manage_fee, $electricity_fee))); // 实际产出 = 挖矿产出 + (管理费 - 电费)
 
+            $machine_data['machine_ids'][] = $machine->id;
+
+            if ($machine->expired_time < $start_time) { //收益冻结
+                $machine_data['machine_output_freeze'][$machine->id] = $real_output;
+                continue;
+            }
+
             $machine_data['machine_output'][] = [
                 'machine_id' => $machine->id,
                 'user_id' => $machine->user_id,
@@ -141,7 +173,6 @@ class MachineOutput extends Command
                 'created_at' => $time,
                 'updated_at' => $time,
             ];
-            $machine_data['machine_ids'][] = $machine->id;
 
             if ($real_output > 0) {
                 $machine_data['machine_output_queue'][] = [
@@ -161,9 +192,17 @@ class MachineOutput extends Command
         $this->machine_output_data_ext($machine_data);
         // runHook('machine_output_data_ext',$machine_data);
 
+        DB::beginTransaction();
         try {
             $result = UsersMachineOutputModel::insert($machine_data['machine_output']);
             if (!$result) throw new Exception('MachineOutput Insert');
+
+            if (isset($machine_data['machine_output_freeze']) && !empty($machine_data['machine_output_freeze'])) {
+                foreach ($machine_data['machine_output_freeze'] as $machine_id => $output) {
+                    $result = UsersMachineModel::where('id', $machine_id)->increment('output_storage', $output);
+                    if (!$result) throw new Exception('Machine Update');
+                }
+            }
 
             if (!empty($machine_data['machine_output_queue'])) {
                 $result = WalletQueueModel::insert($machine_data['machine_output_queue']);
@@ -180,8 +219,10 @@ class MachineOutput extends Command
                 ]);
             if (!$result) throw new Exception('UserMachine Update');
             echo "[{$datetime}] SUCCESS: Machine Output\n";
+            DB::commit();
         } catch (Exception $e) {
             echo "[{$datetime}] ERROR: Machine Output {$e->getMessage()} <Line:{$e->getLine()}>\n";
+            DB::rollBack();
         }
     }
 

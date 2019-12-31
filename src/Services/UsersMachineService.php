@@ -27,16 +27,16 @@ class UsersMachineService extends Service
             $v->output_amount = UsersMachineOutputModel::where('machine_id', $v->id)->sum('output');
 
             $cycle_str = '';
-            $cycle_day = (int) $v->cycle / 24;
-            $cycle_hour = (int) $v->cycle % 24;
-            if ($cycle_day > 0) $cycle_str .= $cycle_day . '天 ';
+            $cycle_day = (int) ($v->cycle / 24);
+            $cycle_hour = (int) ($v->cycle % 24);
+            if ($cycle_day > 0) $cycle_str .= $cycle_day . '天';
             if ($cycle_hour > 0) $cycle_str .= $cycle_hour . '小时';
             $v->cycle_show = $cycle_str;
 
             $expired_str = '';
-            $expired_day = (int) $v->expired_time / 86400;
-            if ($expired_day > 0) $expired_str .= $expired_day . '天 ';
-            $expired_hour = (int) ($v->cycle / 3600) % 24;
+            $expired_day = (int) ($v->expired_time / 86400);
+            if ($expired_day > 0) $expired_str .= $expired_day . '天';
+            $expired_hour = (int) (($v->cycle / 3600) % 24);
             if ($expired_hour > 0) $expired_str .= $expired_hour . '小时';
             $v->expired_day = $expired_str;
 
@@ -170,15 +170,15 @@ class UsersMachineService extends Service
         ])->first();
         if (!$machine)
             throw new UsersMachineException(UsersMachineException::MACHINE_NOT_EXIST);
-        if ($machine->type != 1 || $machine->worth == 0 || $machine->expired_time > time())
-            throw new UsersMachineException(UsersMachineException::MACHINE_CANT_EXTEND);
+        // if ($machine->type != 1 || $machine->worth == 0 || $machine->expired_time > time())
+        //     throw new UsersMachineException(UsersMachineException::MACHINE_CANT_EXTEND);
         if ($user_id != $machine->user_id)
             throw new UsersMachineException(UsersMachineException::NOT_PERMISSION);
         $sku_info = (new GoodsService)->good($machine->sku_id);
         if (!isset($sku_info[0]))
             throw new UsersMachineException(UsersMachineException::MACHINE_GOODS_NOT_EXIST);
 
-        DB::beginTranscation();
+        DB::beginTransaction();
         try {
             //收益储存发放
             if ($machine->output_storage > 0) {
@@ -196,20 +196,35 @@ class UsersMachineService extends Service
                 if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
             }
 
-            $machine_ids = UsersMachineModel::where([
+            $machines = UsersMachineModel::where([
                 'order_sn' => $machine->order_sn,
-                'user_id' => $user_id
-            ])->pluck('id');
+            ])->get();
 
-            $result = UsersMachineModel::whereIn('id', $machine_ids)->update([
-                'cycle' => $sku_info[0]['cycle'],
-                'status' => 1,
-                'start_time' => strtotime(date('Y-m-d 0:0:0', time())) + 86400, //次日生效
-                'expired_time' => strtotime(date('Y-m-d 23:59:59', time())) + $sku_info[0]['cycle'] * 3600,
-                'output_storage' => 0,
-            ]);
-            if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
+            //算力更新
+            foreach ($machines as $v) {
+                $result = UsersMachineModel::where('id', $v->id)->update([
+                    'cycle' => $sku_info[0]['cycle'],
+                    'status' => 1,
+                    'start_time' => strtotime(date('Y-m-d 0:0:0', time())) + 86400, //次日生效
+                    'expired_time' => strtotime(date('Y-m-d 23:59:59', time())) + $sku_info[0]['cycle'] * 3600,
+                    'output_storage' => 0,
+                ]);
+                if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
 
+                if ($v->status == 1) continue;
+                switch ($v->type) {
+                    case 1:
+                        $result = UsersModel::where('user_id', $v->user_id)->increment('power', $v->computing_power);
+                        break;
+                    case 3:
+                        $result = UsersModel::where('user_id', $v->user_id)->increment('reward_power', $v->computing_power);
+                        break;
+                    case 10:
+                        $result = UsersModel::where('user_id', $v->user_id)->increment('reward_team_power', $v->computing_power);
+                        break;
+                }
+                if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
+            }
             DB::commit();
         } catch (CommonException $e) {
             DB::rollBack();
@@ -235,8 +250,8 @@ class UsersMachineService extends Service
         if ($user_id != $machine->user_id)
             throw new UsersMachineException(UsersMachineException::NOT_PERMISSION);
 
-
         //本金返还
+        DB::beginTransaction();
         try {
             $result = WalletQueueModel::insert([
                 'user_id' => $user_id,
@@ -250,9 +265,12 @@ class UsersMachineService extends Service
                 'updated_at' => time(),
             ]);
             if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
+            $result = UsersModel::where('user_id', $machine->user_id)->decrement('power', $machine->computing_power);
+            if (!$result) throw new CommonException(CommonException::UDATE_ERROR);
 
             $machine->worth = 0;
             $machine->status = 0;
+            $machine->output_storage = 0;
             $machine->save();
             DB::commit();
         } catch (CommonException $e) {

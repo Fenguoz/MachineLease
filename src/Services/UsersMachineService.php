@@ -34,7 +34,7 @@ class UsersMachineService extends Service
             $v->cycle_show = $cycle_str;
 
             $expired_str = '';
-            $expired_day = (int) ($v->expired_time / 86400);
+            $expired_day = (int) (($v->expired_time - time()) / 86400);
             if ($expired_day > 0) $expired_str .= $expired_day . '天';
             $expired_hour = (int) (($v->cycle / 3600) % 24);
             if ($expired_hour > 0) $expired_str .= $expired_hour . '小时';

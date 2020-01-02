@@ -31,14 +31,14 @@ class UsersMachineService extends Service
             $cycle_hour = (int) ($v->cycle % 24);
             if ($cycle_day > 0) $cycle_str .= $cycle_day . '天';
             if ($cycle_hour > 0) $cycle_str .= $cycle_hour . '小时';
-            $v->cycle_show = $cycle_str;
+            $v->cycle_show = empty($cycle_str) ? 0 : $cycle_str;
 
             $expired_str = '';
             $expired_day = (int) (($v->expired_time - time()) / 86400);
             if ($expired_day > 0) $expired_str .= $expired_day . '天';
             $expired_hour = (int) (($v->cycle / 3600) % 24);
             if ($expired_hour > 0) $expired_str .= $expired_hour . '小时';
-            $v->expired_day = $expired_str;
+            $v->expired_day = empty($expired_str) ? 0 : $expired_str;
 
             $v->can_extend = ($v->worth > 0 && $v->type == 1 && $v->expired_time < time()) ? 1 : 0;
             $v->can_refund = ($v->worth > 0 && $v->type == 1 && $v->expired_time < time()) ? 1 : 0;

@@ -84,7 +84,7 @@ class UsersMachineService extends Service
             $rules = json_decode($level_info->rules, true);
             foreach ($rules as $type => $rule) {
 
-                $team_info = json_decode($user, true);
+                $team_info = json_decode($user->team_info, true);
                 switch ($type) {
                     case 'self_cert':
                         $status = DB::table('rryb.certification')->where('user_id', $user_id)->value('status') ?? 0;
